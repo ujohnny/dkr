@@ -3,7 +3,7 @@
 
 # Trust /workspace project for Claude
 cat > /root/.claude.json <<'TRUST'
-{"projects":{"/workspace":{"hasTrustDialogAccepted":true}}}
+{"hasCompletedOnboarding":true,"effortCalloutDismissed":true,"projects":{"/workspace":{"hasTrustDialogAccepted":true}}}
 TRUST
 
 # Configure Claude to read API key from mounted secret
