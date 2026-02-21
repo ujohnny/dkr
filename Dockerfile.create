@@ -1,0 +1,27 @@
+# syntax=docker/dockerfile:1
+FROM fedora:43
+
+RUN dnf install -y git tmux openssh-clients && dnf clean all
+
+ARG REPO_PATH
+ARG BRANCH
+ARG GIT_USER
+ARG HOST_ADDR=host.docker.internal
+
+RUN mkdir -p /root/.ssh && \
+    ssh-keyscan -H ${HOST_ADDR} >> /root/.ssh/known_hosts 2>/dev/null || true
+
+RUN --mount=type=ssh \
+    git clone ${GIT_USER}@${HOST_ADDR}:${REPO_PATH} /workspace
+
+RUN cd /workspace && git remote rename origin host && git checkout ${BRANCH}
+
+ENV DKR_BRANCH=${BRANCH}
+
+RUN echo "build --disk_cache=/bazel-cache" >> /root/.bazelrc
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+WORKDIR /workspace
+ENTRYPOINT ["/entrypoint.sh"]

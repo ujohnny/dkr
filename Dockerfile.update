@@ -1,0 +1,13 @@
+# syntax=docker/dockerfile:1
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+ARG GIT_USER
+ARG REPO_PATH
+ARG BRANCH
+ARG HOST_ADDR=host.docker.internal
+
+RUN --mount=type=ssh \
+    cd /workspace && \
+    git fetch ${GIT_USER}@${HOST_ADDR}:${REPO_PATH} ${BRANCH} && \
+    git rebase FETCH_HEAD
