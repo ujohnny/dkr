@@ -277,6 +277,7 @@ def generate_dockerfile_create(conf):
         "",
         "ARG CLAUDE_VERSION=latest",
         "RUN curl -fsSL https://claude.ai/install.sh | bash",
+        "ENV PATH=/root/.local/bin:$PATH",
         "",
         "ARG REPO_PATH",
         "ARG BRANCH",
