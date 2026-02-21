@@ -510,15 +510,15 @@ def cmd_start_image(args):
     if ssh_key.exists():
         cmd += ["-v", f"{ssh_key}:/root/.ssh/id_rsa:ro"]
 
+    if hasattr(args, "name") and args.name:
+        cmd += ["-e", f"DKR_WORK_BRANCH={args.name}"]
+
     # Use the first tag if available, otherwise the image id
     image_ref = image["tags"][0] if image["tags"] else image["id"]
     cmd.append(image_ref)
 
     # Pass extra args to the container (forwarded to entrypoint as $@)
-    extra = args.container_args if hasattr(args, "container_args") else []
-    if extra and extra[0] == "--":
-        extra = extra[1:]
-    cmd += extra
+    cmd += getattr(args, "container_args", [])
 
     subprocess.run(cmd)
 
@@ -593,7 +593,7 @@ def _build_parser():
     p = sub.add_parser("start-image", help="Start a container from a dkr image")
     p.add_argument("git_repo", nargs="?", default=None, help="Path to local git repo (default: latest image)")
     p.add_argument("branch_from", nargs="?", default=None, help="Branch/ref (default: latest image)")
-    p.add_argument("container_args", nargs=argparse.REMAINDER, default=[], help="Extra args passed to container (after --)")
+    p.add_argument("--name", default=None, help="Working branch name (default: random adjective-noun)")
 
     # list-images
     p = sub.add_parser("list-images", help="List dkr-managed Docker images")
@@ -605,7 +605,15 @@ def _build_parser():
 
 def run_command(argv):
     """Parse *argv* and run the corresponding command. Callable from tests."""
-    args = _build_parser().parse_args(argv)
+    # Split on '--' to separate dkr args from container args
+    if "--" in argv:
+        idx = argv.index("--")
+        dkr_argv, container_args = argv[:idx], argv[idx + 1:]
+    else:
+        dkr_argv, container_args = argv, []
+
+    args = _build_parser().parse_args(dkr_argv)
+    args.container_args = container_args
     DISPATCH[args.command](args)
 
 

@@ -14,7 +14,7 @@ cd /workspace
 BRANCH="${DKR_BRANCH:-master}"
 
 if git fetch host "$BRANCH"; then
-    WORK_BRANCH=$(random_name)
+    WORK_BRANCH="${DKR_WORK_BRANCH:-$(random_name)}"
     git checkout -b "$WORK_BRANCH" FETCH_HEAD
     git branch --set-upstream-to="host/$BRANCH" "$WORK_BRANCH"
     git config "remote.host.push" "refs/heads/$WORK_BRANCH:refs/heads/$HOSTNAME/$WORK_BRANCH"
