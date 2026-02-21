@@ -318,22 +318,15 @@ def resolve_ssh_key(args):
     return key
 
 
-def cmd_create_image(args):
-    ssh_key = resolve_ssh_key(args)
-    repo_path = resolve_repo(args.git_repo)
-    branch_from = args.branch_from or "HEAD"
+def _build_image(*, ssh_key, repo_path, checkout_branch, tag, labels,
+                  dockerfile_generator, extra_build_args=None, message_prefix="Building"):
+    """Shared build logic for create-image and update-image.
 
-    remote, branch = fetch_if_remote(repo_path, branch_from)
-    commit = resolve_commit(repo_path, branch_from)
-    # For checkout inside container: use the plain branch name
-    checkout_branch = branch if remote else branch_from
-
-    tag = image_tag(repo_path, checkout_branch)
-    labels = build_labels(repo_path, checkout_branch, commit, "base", branch_from)
+    Checks out *checkout_branch*, reads .dkr.conf, generates a Dockerfile
+    via *dockerfile_generator(conf)*, builds, and cleans up.
+    """
     user = getpass.getuser()
 
-    # Checkout target branch so we can read .dkr.conf and provide files
-    # for pre_clone/post_clone COPY instructions
     original_ref = git(repo_path, "rev-parse", "--abbrev-ref", "HEAD")
     if original_ref == "HEAD":
         original_ref = git(repo_path, "rev-parse", "HEAD")
@@ -342,20 +335,18 @@ def cmd_create_image(args):
     if need_checkout:
         git(repo_path, "checkout", checkout_branch)
 
-    dockerfile_path = repo_path / ".dkr-Dockerfile.create"
+    dockerfile_path = repo_path / ".dkr-Dockerfile"
     entrypoint_path = repo_path / ".dkr-entrypoint.sh"
     install_pkg_path = repo_path / ".dkr-install-packages.sh"
     try:
-        # Load config from the checked-out branch
         conf = load_dkr_conf(repo_path)
-        dockerfile_content = generate_dockerfile_create(conf)
-        dockerfile_path.write_text(dockerfile_content)
+        dockerfile_path.write_text(dockerfile_generator(conf))
 
         # Copy support scripts into the build context
         shutil.copy2(SCRIPT_DIR / "entrypoint.sh", entrypoint_path)
         shutil.copy2(SCRIPT_DIR / "install-packages.sh", install_pkg_path)
 
-        print(f"Building image {tag} from {repo_path} @ {branch_from} ({commit[:12]})")
+        print(f"{message_prefix} image {tag}")
 
         cmd = [
             "docker", "build",
@@ -367,19 +358,39 @@ def cmd_create_image(args):
             "--build-arg", f"HOST_ADDR={HOST_ADDR}",
             "--tag", tag,
             "-f", str(dockerfile_path),
-        ] + label_args(labels) + [str(repo_path)]
+        ]
+        for k, v in (extra_build_args or {}).items():
+            cmd += ["--build-arg", f"{k}={v}"]
+        cmd += label_args(labels) + [str(repo_path)]
 
         env = {**os.environ, "DOCKER_BUILDKIT": "1"}
         subprocess.run(cmd, check=True, env=env)
-
-        print(f"Image built: {tag}")
     finally:
-        # Cleanup temp files and restore branch
         dockerfile_path.unlink(missing_ok=True)
         entrypoint_path.unlink(missing_ok=True)
         install_pkg_path.unlink(missing_ok=True)
         if need_checkout:
             git(repo_path, "checkout", original_ref)
+
+
+def cmd_create_image(args):
+    ssh_key = resolve_ssh_key(args)
+    repo_path = resolve_repo(args.git_repo)
+    branch_from = args.branch_from or "HEAD"
+
+    remote, branch = fetch_if_remote(repo_path, branch_from)
+    commit = resolve_commit(repo_path, branch_from)
+    checkout_branch = branch if remote else branch_from
+
+    tag = image_tag(repo_path, checkout_branch)
+    labels = build_labels(repo_path, checkout_branch, commit, "base", branch_from)
+
+    _build_image(
+        ssh_key=ssh_key, repo_path=repo_path, checkout_branch=checkout_branch,
+        tag=tag, labels=labels, dockerfile_generator=generate_dockerfile_create,
+        message_prefix=f"Building from {repo_path} @ {branch_from} ({commit[:12]}),",
+    )
+    print(f"Image built: {tag}")
 
 
 def cmd_update_image(args):
@@ -401,46 +412,14 @@ def cmd_update_image(args):
     commit = resolve_commit(repo_path, branch_from)
     tag = image_tag(repo_path, checkout_branch)
     labels = build_labels(repo_path, checkout_branch, commit, "update", branch_from)
-    user = getpass.getuser()
 
-    # Checkout target branch to read .dkr.conf and provide files for post_clone
-    original_ref = git(repo_path, "rev-parse", "--abbrev-ref", "HEAD")
-    if original_ref == "HEAD":
-        original_ref = git(repo_path, "rev-parse", "HEAD")
-
-    need_checkout = checkout_branch != "HEAD" and checkout_branch != original_ref
-    if need_checkout:
-        git(repo_path, "checkout", checkout_branch)
-
-    dockerfile_path = repo_path / ".dkr-Dockerfile.update"
-    try:
-        conf = load_dkr_conf(repo_path)
-        dockerfile_content = generate_dockerfile_update(conf)
-        dockerfile_path.write_text(dockerfile_content)
-
-        print(f"Updating image from {base_ref} -> {repo_path} @ {branch_from} ({commit[:12]})")
-
-        cmd = [
-            "docker", "build",
-            "--ssh", f"default={ssh_key}",
-            "--network=host",
-            "--build-arg", f"BASE_IMAGE={base_ref}",
-            "--build-arg", f"REPO_PATH={repo_path}",
-            "--build-arg", f"BRANCH={checkout_branch}",
-            "--build-arg", f"GIT_USER={user}",
-            "--build-arg", f"HOST_ADDR={HOST_ADDR}",
-            "--tag", tag,
-            "-f", str(dockerfile_path),
-        ] + label_args(labels) + [str(repo_path)]
-
-        env = {**os.environ, "DOCKER_BUILDKIT": "1"}
-        subprocess.run(cmd, check=True, env=env)
-
-        print(f"Image updated: {tag}")
-    finally:
-        dockerfile_path.unlink(missing_ok=True)
-        if need_checkout:
-            git(repo_path, "checkout", original_ref)
+    _build_image(
+        ssh_key=ssh_key, repo_path=repo_path, checkout_branch=checkout_branch,
+        tag=tag, labels=labels, dockerfile_generator=generate_dockerfile_update,
+        extra_build_args={"BASE_IMAGE": base_ref},
+        message_prefix=f"Updating from {base_ref} -> {branch_from} ({commit[:12]}),",
+    )
+    print(f"Image updated: {tag}")
 
 
 def staleness_check(image, repo_path):
