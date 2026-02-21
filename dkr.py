@@ -286,7 +286,7 @@ def generate_dockerfile_update(conf):
 
     lines = [
         "# syntax=docker/dockerfile:1",
-        "ARG BASE_IMAGE",
+        "ARG BASE_IMAGE=scratch",
         "FROM ${BASE_IMAGE}",
         "",
         "ARG GIT_USER",
