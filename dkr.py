@@ -7,6 +7,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -166,6 +167,145 @@ def find_latest_image(repo_path=None, branch=None):
 
 
 # ---------------------------------------------------------------------------
+# .dkr.conf support
+# ---------------------------------------------------------------------------
+
+DKR_CONF_DEFAULTS = {
+    "base_image": "fedora:43",
+    "packages": "",
+    "pre_clone": "",
+    "post_clone": "",
+}
+
+REQUIRED_PACKAGES = ["git", "tmux", "openssh-clients"]
+
+
+def load_dkr_conf(repo_path):
+    """Read .dkr.conf from *repo_path* (branch should already be checked out).
+
+    Returns a dict with keys: base_image, packages, pre_clone, post_clone.
+
+    Format: top-level ``key = value`` lines, plus ``[pre_clone]`` and
+    ``[post_clone]`` sections containing raw Dockerfile lines.
+    """
+    conf = dict(DKR_CONF_DEFAULTS)
+    conf_file = repo_path / ".dkr.conf"
+    if not conf_file.exists():
+        return conf
+
+    current_section = None
+    section_lines = {"pre_clone": [], "post_clone": []}
+
+    for line in conf_file.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        # Section header
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current_section = stripped[1:-1]
+            continue
+        if current_section in section_lines:
+            # Raw Dockerfile line — preserve as-is
+            section_lines[current_section].append(line)
+        elif "=" in stripped:
+            key, _, value = stripped.partition("=")
+            conf[key.strip()] = value.strip()
+
+    conf["pre_clone"] = "\n".join(section_lines["pre_clone"])
+    conf["post_clone"] = "\n".join(section_lines["post_clone"])
+
+    return conf
+
+
+def generate_dockerfile_create(conf):
+    """Generate the Dockerfile.create content from a parsed .dkr.conf dict."""
+    base_image = conf["base_image"]
+
+    # Merge required + user packages
+    user_pkgs = conf["packages"].split() if conf["packages"] else []
+    all_pkgs = REQUIRED_PACKAGES + [p for p in user_pkgs if p not in REQUIRED_PACKAGES]
+    pkg_list = " ".join(all_pkgs)
+
+    pre_clone = conf["pre_clone"]
+    post_clone = conf["post_clone"]
+
+    lines = [
+        "# syntax=docker/dockerfile:1",
+        f"FROM {base_image}",
+        "",
+        "COPY .dkr-install-packages.sh /tmp/install-packages.sh",
+        "RUN chmod +x /tmp/install-packages.sh && \\",
+        f"    /tmp/install-packages.sh {pkg_list} && \\",
+        "    rm /tmp/install-packages.sh",
+        "",
+        "ARG REPO_PATH",
+        "ARG BRANCH",
+        "ARG GIT_USER",
+        "ARG HOST_ADDR=host.docker.internal",
+        "",
+        "RUN mkdir -p /root/.ssh && \\",
+        "    ssh-keyscan -H ${HOST_ADDR} >> /root/.ssh/known_hosts 2>/dev/null || true",
+        "",
+    ]
+
+    if pre_clone:
+        lines += [pre_clone, ""]
+
+    lines += [
+        "RUN --mount=type=ssh \\",
+        "    git clone ${GIT_USER}@${HOST_ADDR}:${REPO_PATH} /workspace",
+        "",
+        "RUN cd /workspace && git remote rename origin host && git checkout ${BRANCH}",
+        "",
+        "ENV DKR_BRANCH=${BRANCH}",
+        "",
+    ]
+
+    if post_clone:
+        lines += [post_clone, ""]
+
+    lines += [
+        'RUN echo "build --disk_cache=/bazel-cache" >> /root/.bazelrc',
+        "",
+        "COPY .dkr-entrypoint.sh /entrypoint.sh",
+        "RUN chmod +x /entrypoint.sh",
+        "",
+        "WORKDIR /workspace",
+        'ENTRYPOINT ["/entrypoint.sh"]',
+        "",
+    ]
+
+    return "\n".join(lines)
+
+
+def generate_dockerfile_update(conf):
+    """Generate the Dockerfile.update content from a parsed .dkr.conf dict."""
+    post_clone = conf["post_clone"]
+
+    lines = [
+        "# syntax=docker/dockerfile:1",
+        "ARG BASE_IMAGE",
+        "FROM ${BASE_IMAGE}",
+        "",
+        "ARG GIT_USER",
+        "ARG REPO_PATH",
+        "ARG BRANCH",
+        "ARG HOST_ADDR=host.docker.internal",
+        "",
+        "RUN --mount=type=ssh \\",
+        "    cd /workspace && \\",
+        "    git fetch ${GIT_USER}@${HOST_ADDR}:${REPO_PATH} ${BRANCH} && \\",
+        "    git rebase FETCH_HEAD",
+        "",
+    ]
+
+    if post_clone:
+        lines += [post_clone, ""]
+
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
 # Commands
 # ---------------------------------------------------------------------------
 
@@ -191,24 +331,54 @@ def cmd_create_image(args):
     labels = build_labels(repo_path, checkout_branch, commit, "base")
     user = getpass.getuser()
 
-    print(f"Building image {tag} from {repo_path} @ {branch_from} ({commit[:12]})")
+    # Checkout target branch so we can read .dkr.conf and provide files
+    # for pre_clone/post_clone COPY instructions
+    original_ref = git(repo_path, "rev-parse", "--abbrev-ref", "HEAD")
+    if original_ref == "HEAD":
+        original_ref = git(repo_path, "rev-parse", "HEAD")
 
-    cmd = [
-        "docker", "build",
-        "--ssh", f"default={ssh_key}",
-        "--network=host",
-        "--build-arg", f"REPO_PATH={repo_path}",
-        "--build-arg", f"BRANCH={checkout_branch}",
-        "--build-arg", f"GIT_USER={user}",
-        "--build-arg", f"HOST_ADDR={HOST_ADDR}",
-        "--tag", tag,
-        "-f", str(SCRIPT_DIR / "Dockerfile.create"),
-    ] + label_args(labels) + [str(SCRIPT_DIR)]
+    need_checkout = checkout_branch != "HEAD" and checkout_branch != original_ref
+    if need_checkout:
+        git(repo_path, "checkout", checkout_branch)
 
-    env = {**os.environ, "DOCKER_BUILDKIT": "1"}
-    subprocess.run(cmd, check=True, env=env)
+    dockerfile_path = repo_path / ".dkr-Dockerfile.create"
+    entrypoint_path = repo_path / ".dkr-entrypoint.sh"
+    install_pkg_path = repo_path / ".dkr-install-packages.sh"
+    try:
+        # Load config from the checked-out branch
+        conf = load_dkr_conf(repo_path)
+        dockerfile_content = generate_dockerfile_create(conf)
+        dockerfile_path.write_text(dockerfile_content)
 
-    print(f"Image built: {tag}")
+        # Copy support scripts into the build context
+        shutil.copy2(SCRIPT_DIR / "entrypoint.sh", entrypoint_path)
+        shutil.copy2(SCRIPT_DIR / "install-packages.sh", install_pkg_path)
+
+        print(f"Building image {tag} from {repo_path} @ {branch_from} ({commit[:12]})")
+
+        cmd = [
+            "docker", "build",
+            "--ssh", f"default={ssh_key}",
+            "--network=host",
+            "--build-arg", f"REPO_PATH={repo_path}",
+            "--build-arg", f"BRANCH={checkout_branch}",
+            "--build-arg", f"GIT_USER={user}",
+            "--build-arg", f"HOST_ADDR={HOST_ADDR}",
+            "--tag", tag,
+            "-f", str(dockerfile_path),
+        ] + label_args(labels) + [str(repo_path)]
+
+        env = {**os.environ, "DOCKER_BUILDKIT": "1"}
+        subprocess.run(cmd, check=True, env=env)
+
+        print(f"Image built: {tag}")
+    finally:
+        # Cleanup temp files and restore branch
+        dockerfile_path.unlink(missing_ok=True)
+        entrypoint_path.unlink(missing_ok=True)
+        install_pkg_path.unlink(missing_ok=True)
+        if need_checkout:
+            git(repo_path, "checkout", original_ref)
 
 
 def cmd_update_image(args):
@@ -232,25 +402,44 @@ def cmd_update_image(args):
     labels = build_labels(repo_path, checkout_branch, commit, "update")
     user = getpass.getuser()
 
-    print(f"Updating image from {base_ref} -> {repo_path} @ {branch_from} ({commit[:12]})")
+    # Checkout target branch to read .dkr.conf and provide files for post_clone
+    original_ref = git(repo_path, "rev-parse", "--abbrev-ref", "HEAD")
+    if original_ref == "HEAD":
+        original_ref = git(repo_path, "rev-parse", "HEAD")
 
-    cmd = [
-        "docker", "build",
-        "--ssh", f"default={ssh_key}",
-        "--network=host",
-        "--build-arg", f"BASE_IMAGE={base_ref}",
-        "--build-arg", f"REPO_PATH={repo_path}",
-        "--build-arg", f"BRANCH={checkout_branch}",
-        "--build-arg", f"GIT_USER={user}",
-        "--build-arg", f"HOST_ADDR={HOST_ADDR}",
-        "--tag", tag,
-        "-f", str(SCRIPT_DIR / "Dockerfile.update"),
-    ] + label_args(labels) + [str(SCRIPT_DIR)]
+    need_checkout = checkout_branch != "HEAD" and checkout_branch != original_ref
+    if need_checkout:
+        git(repo_path, "checkout", checkout_branch)
 
-    env = {**os.environ, "DOCKER_BUILDKIT": "1"}
-    subprocess.run(cmd, check=True, env=env)
+    dockerfile_path = repo_path / ".dkr-Dockerfile.update"
+    try:
+        conf = load_dkr_conf(repo_path)
+        dockerfile_content = generate_dockerfile_update(conf)
+        dockerfile_path.write_text(dockerfile_content)
 
-    print(f"Image updated: {tag}")
+        print(f"Updating image from {base_ref} -> {repo_path} @ {branch_from} ({commit[:12]})")
+
+        cmd = [
+            "docker", "build",
+            "--ssh", f"default={ssh_key}",
+            "--network=host",
+            "--build-arg", f"BASE_IMAGE={base_ref}",
+            "--build-arg", f"REPO_PATH={repo_path}",
+            "--build-arg", f"BRANCH={checkout_branch}",
+            "--build-arg", f"GIT_USER={user}",
+            "--build-arg", f"HOST_ADDR={HOST_ADDR}",
+            "--tag", tag,
+            "-f", str(dockerfile_path),
+        ] + label_args(labels) + [str(repo_path)]
+
+        env = {**os.environ, "DOCKER_BUILDKIT": "1"}
+        subprocess.run(cmd, check=True, env=env)
+
+        print(f"Image updated: {tag}")
+    finally:
+        dockerfile_path.unlink(missing_ok=True)
+        if need_checkout:
+            git(repo_path, "checkout", original_ref)
 
 
 def staleness_check(image, repo_path):

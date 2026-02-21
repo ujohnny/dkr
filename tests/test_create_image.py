@@ -72,3 +72,28 @@ class TestCreateImage:
             capture_output=True, text=True, check=False,
         )
         assert r.returncode != 0
+
+    def test_dkr_conf(self, make_repo):
+        """Create an image with .dkr.conf that adds a post_clone step."""
+        repo, commits = make_repo({
+            "master": [
+                {"message": "initial", "files": {
+                    "README.md": "hello",
+                    ".dkr.conf": """\
+base_image = fedora:43
+
+[post_clone]
+RUN echo post_clone_marker > /tmp/marker.txt
+""",
+                }},
+            ],
+        })
+
+        dkr("create-image", str(repo), "master")
+
+        images = find_images(repo, "master")
+        assert len(images) >= 1
+        tag = images[0]["tags"][0]
+
+        # Verify post_clone step ran
+        assert docker_run_cmd(tag, "cat", "/tmp/marker.txt") == "post_clone_marker"
