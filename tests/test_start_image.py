@@ -3,7 +3,7 @@
 import json
 import re
 
-from conftest import dkr
+from conftest import dkr, _git
 
 
 class TestStartImage:
@@ -118,3 +118,29 @@ volumes = {host_dir}:/mnt/shared
         assert settings["apiKeyHelper"] == "cat /run/secrets/anthropic_key"
         # Key file content should be readable
         assert "sk-test-key-12345" in output
+
+    def test_git_push_to_host(self, make_repo, capfd):
+        """git push from container creates a branch on the host repo."""
+        repo, _ = make_repo({
+            "master": [
+                {"message": "initial", "files": {"README.md": "hello"}},
+            ],
+        })
+
+        dkr("create-image", str(repo), "master")
+        dkr("start-image", str(repo), "master", "--name", "push-test", "--",
+            "bash", "-c",
+            "git config user.email test@test.com && "
+            "git config user.name Test && "
+            "echo pushed > pushed.txt && "
+            "git add pushed.txt && "
+            "git commit -m 'from container' && "
+            "git push host")
+
+        # Verify branch exists on host
+        branches = _git(repo, "branch", "--list", "push-test")
+        assert "push-test" in branches
+
+        # Verify pushed content
+        content = _git(repo, "show", "push-test:pushed.txt")
+        assert content == "pushed"
