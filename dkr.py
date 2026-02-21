@@ -80,6 +80,14 @@ def fetch_if_remote(repo_path, branch_from):
     return remote, branch
 
 
+def resolve_head(repo_path):
+    """Resolve HEAD to the actual branch name, or commit SHA if detached."""
+    ref = git(repo_path, "rev-parse", "--abbrev-ref", "HEAD")
+    if ref == "HEAD":
+        ref = git(repo_path, "rev-parse", "HEAD")
+    return ref
+
+
 def resolve_commit(repo_path, branch_from):
     """Resolve branch_from to a full commit SHA in the local repo."""
     return git(repo_path, "rev-parse", branch_from)
@@ -377,7 +385,7 @@ def _build_image(*, ssh_key, repo_path, checkout_branch, tag, labels,
 def cmd_create_image(args):
     ssh_key = resolve_ssh_key(args)
     repo_path = resolve_repo(args.git_repo)
-    branch_from = args.branch_from or "HEAD"
+    branch_from = args.branch_from or resolve_head(repo_path)
 
     remote, branch = fetch_if_remote(repo_path, branch_from)
     commit = resolve_commit(repo_path, branch_from)
@@ -397,7 +405,7 @@ def cmd_create_image(args):
 def cmd_update_image(args):
     ssh_key = resolve_ssh_key(args)
     repo_path = resolve_repo(args.git_repo)
-    branch_from = args.branch_from or "HEAD"
+    branch_from = args.branch_from or resolve_head(repo_path)
 
     remote, branch = fetch_if_remote(repo_path, branch_from)
     checkout_branch = branch if remote else branch_from

@@ -119,3 +119,35 @@ RUN echo post_clone_marker > /tmp/marker.txt
         tag = img["tags"][0]
         assert docker_run_cmd(tag, "cat", "/workspace/README.md") == "from remote"
         assert docker_run_cmd(tag, "cat", "/workspace/remote.txt") == "remote content"
+
+    def test_head_resolves_to_branch(self, make_repo):
+        """create-image with no branch arg resolves HEAD to actual branch name."""
+        repo, commits = make_repo({
+            "foo": [
+                {"message": "initial", "files": {"README.md": "on foo"}},
+            ],
+        })
+
+        dkr("create-image", str(repo))
+
+        images = find_images(repo, "foo")
+        assert len(images) >= 1
+        assert images[0]["labels"]["dkr.branch"] == "foo"
+
+    def test_head_detached_resolves_to_sha(self, make_repo):
+        """create-image in detached HEAD uses commit SHA as branch label."""
+        repo, commits = make_repo({
+            "master": [
+                {"message": "initial", "files": {"README.md": "hello"}},
+                {"message": "second", "files": {"b.txt": "b"}},
+            ],
+        })
+
+        sha = commits["master"][0]
+        _git(repo, "checkout", sha)
+
+        dkr("create-image", str(repo))
+
+        images = find_images(repo, sha)
+        assert len(images) >= 1
+        assert images[0]["labels"]["dkr.branch"] == sha
