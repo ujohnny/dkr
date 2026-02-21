@@ -1,4 +1,4 @@
-"""Test start-image command."""
+"""Test start-container command."""
 
 import json
 import re
@@ -17,7 +17,7 @@ class TestStartImage:
         })
 
         dkr("create-image", str(repo), "master")
-        dkr("start-image", str(repo), "master", "--", "true")
+        dkr("start-container", str(repo), "master", "--", "true")
 
         output = capfd.readouterr().out
 
@@ -43,7 +43,7 @@ class TestStartImage:
         })
 
         dkr("create-image", str(repo), "master")
-        dkr("start-image", str(repo), "master", "--name", "my-feature", "--", "true")
+        dkr("start-container", str(repo), "master", "--name", "my-feature", "--", "true")
 
         output = capfd.readouterr().out
 
@@ -71,7 +71,7 @@ volumes = {host_dir}:/mnt/shared
         })
 
         dkr("create-image", str(repo), "master")
-        dkr("start-image", str(repo), "master", "--",
+        dkr("start-container", str(repo), "master", "--",
             "cat", "/mnt/shared/marker.txt")
 
         output = capfd.readouterr().out
@@ -86,7 +86,7 @@ volumes = {host_dir}:/mnt/shared
         })
 
         dkr("create-image", str(repo), "master")
-        dkr("start-image", str(repo), "master", "--agent", "none", "--",
+        dkr("start-container", str(repo), "master", "--agent", "none", "--",
             "bash", "-c", "cat /root/.claude.json")
 
         output = capfd.readouterr().out
@@ -105,7 +105,7 @@ volumes = {host_dir}:/mnt/shared
         })
 
         dkr("create-image", str(repo), "master")
-        dkr("start-image", str(repo), "master",
+        dkr("start-container", str(repo), "master",
             "--anthropic-key", str(key_file), "--agent", "none", "--",
             "bash", "-c",
             "cat /root/.claude/settings.json && echo '---' && cat /run/secrets/anthropic_key")
@@ -128,7 +128,7 @@ volumes = {host_dir}:/mnt/shared
         })
 
         dkr("create-image", str(repo), "master")
-        dkr("start-image", str(repo), "master", "--name", "push-test", "--",
+        dkr("start-container", str(repo), "master", "--name", "push-test", "--",
             "bash", "-c",
             "git config user.email test@test.com && "
             "git config user.name Test && "

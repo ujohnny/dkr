@@ -116,10 +116,10 @@ Same argument semantics as `create-image`. Finds the most recent existing image 
 
 ---
 
-## Command: `start-image`
+## Command: `start-container`
 
 ```
-./dkr.py start-image [git_repo] [branch_from] [--name <branch_name>] [--anthropic-key <path>] [-- <cmd>]
+./dkr.py start-container [git_repo] [branch_from] [--name <branch_name>] [--anthropic-key <path>] [-- <cmd>]
 ```
 
 - No args = find the most recently built `dkr:*` image. With args = find latest for that repo+branch.

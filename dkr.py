@@ -614,7 +614,7 @@ def cmd_list_images(args):
 DISPATCH = {
     "create-image": cmd_create_image,
     "update-image": cmd_update_image,
-    "start-image": cmd_start_image,
+    "start-container": cmd_start_image,
     "list-images": cmd_list_images,
 }
 
@@ -640,8 +640,8 @@ def _build_parser():
     p.add_argument("branch_from", nargs="?", default=None, help="Branch/ref (default: HEAD)")
     p.add_argument("--ssh-key", default=ssh_key_default, help="SSH private key path (default: ~/.ssh/id_rsa)")
 
-    # start-image
-    p = sub.add_parser("start-image", help="Start a container from a dkr image")
+    # start-container
+    p = sub.add_parser("start-container", help="Start a container from a dkr image")
     p.add_argument("git_repo", nargs="?", default=None, help="Path to local git repo (default: latest image)")
     p.add_argument("branch_from", nargs="?", default=None, help="Branch/ref (default: latest image)")
     p.add_argument("--name", default=None, help="Working branch name (default: random adjective-noun)")

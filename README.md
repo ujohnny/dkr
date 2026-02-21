@@ -33,7 +33,7 @@ Adds a thin layer on top of the existing image with `git fetch + rebase`. Much f
 ### Start a container
 
 ```bash
-dkr.py start-image
+dkr.py start-container
 ```
 
 Starts a container with tmux. The entrypoint fetches the latest code and creates a working branch (random name like `brave-panda`, or use `--name my-feature`).
