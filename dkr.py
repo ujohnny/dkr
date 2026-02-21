@@ -612,10 +612,10 @@ def cmd_list_images(args):
 # ---------------------------------------------------------------------------
 
 DISPATCH = {
-    "create-image": cmd_create_image,
-    "update-image": cmd_update_image,
-    "start-container": cmd_start_image,
-    "list-images": cmd_list_images,
+    "create-image": cmd_create_image, "ci": cmd_create_image,
+    "update-image": cmd_update_image, "ui": cmd_update_image,
+    "start-container": cmd_start_image, "sc": cmd_start_image,
+    "list-images": cmd_list_images, "ls": cmd_list_images,
 }
 
 
@@ -629,19 +629,19 @@ def _build_parser():
     ssh_key_default = "~/.ssh/id_rsa"
 
     # create-image
-    p = sub.add_parser("create-image", help="Create a new Docker image with a git repo clone")
+    p = sub.add_parser("create-image", aliases=["ci"], help="Create a new Docker image with a git repo clone")
     p.add_argument("git_repo", nargs="?", default=None, help="Path to local git repo (default: cwd)")
     p.add_argument("branch_from", nargs="?", default=None, help="Branch/ref to checkout (default: HEAD)")
     p.add_argument("--ssh-key", default=ssh_key_default, help="SSH private key path (default: ~/.ssh/id_rsa)")
 
     # update-image
-    p = sub.add_parser("update-image", help="Update an existing image with git fetch + rebase")
+    p = sub.add_parser("update-image", aliases=["ui"], help="Update an existing image with git fetch + rebase")
     p.add_argument("git_repo", nargs="?", default=None, help="Path to local git repo (default: cwd)")
     p.add_argument("branch_from", nargs="?", default=None, help="Branch/ref (default: HEAD)")
     p.add_argument("--ssh-key", default=ssh_key_default, help="SSH private key path (default: ~/.ssh/id_rsa)")
 
     # start-container
-    p = sub.add_parser("start-container", help="Start a container from a dkr image")
+    p = sub.add_parser("start-container", aliases=["sc"], help="Start a container from a dkr image")
     p.add_argument("git_repo", nargs="?", default=None, help="Path to local git repo (default: latest image)")
     p.add_argument("branch_from", nargs="?", default=None, help="Branch/ref (default: latest image)")
     p.add_argument("--name", default=None, help="Working branch name (default: random adjective-noun)")
@@ -651,7 +651,7 @@ def _build_parser():
                    help="AI agent to run in first tmux window (default: claude)")
 
     # list-images
-    p = sub.add_parser("list-images", help="List dkr-managed Docker images")
+    p = sub.add_parser("list-images", aliases=["ls"], help="List dkr-managed Docker images")
     p.add_argument("git_repo", nargs="?", default=None, help="Path to local git repo (filter)")
     p.add_argument("branch_from", nargs="?", default=None, help="Branch/ref (filter)")
 
