@@ -201,7 +201,7 @@ DKR_CONF_DEFAULTS = {
     "post_clone": "",
 }
 
-REQUIRED_PACKAGES = ["git", "tmux", "openssh-clients", "nodejs", "npm"]
+REQUIRED_PACKAGES = ["git", "tmux", "openssh-clients", "curl"]
 
 
 def load_dkr_conf(repo_path):
@@ -262,7 +262,7 @@ def generate_dockerfile_create(conf):
         f"    /tmp/install-packages.sh {pkg_list} && \\",
         "    rm /tmp/install-packages.sh",
         "",
-        "RUN npm install -g @anthropic-ai/claude-code",
+        "RUN curl -fsSL https://claude.ai/install.sh | bash",
         "",
         "ARG REPO_PATH",
         "ARG BRANCH",
