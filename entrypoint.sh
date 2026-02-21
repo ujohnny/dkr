@@ -26,6 +26,11 @@ fi
 
 if [ $# -gt 0 ]; then
     exec "$@"
-else
+fi
+
+AGENT="${DKR_AGENT:-claude}"
+if [ "$AGENT" = "none" ]; then
     exec tmux new-session -s main
+else
+    exec tmux new-session -s main -n agent "$AGENT" \; new-window -n shell
 fi

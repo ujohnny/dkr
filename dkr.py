@@ -179,7 +179,7 @@ DKR_CONF_DEFAULTS = {
     "post_clone": "",
 }
 
-REQUIRED_PACKAGES = ["git", "tmux", "openssh-clients"]
+REQUIRED_PACKAGES = ["git", "tmux", "openssh-clients", "nodejs", "npm"]
 
 
 def load_dkr_conf(repo_path):
@@ -239,6 +239,8 @@ def generate_dockerfile_create(conf):
         "RUN chmod +x /tmp/install-packages.sh && \\",
         f"    /tmp/install-packages.sh {pkg_list} && \\",
         "    rm /tmp/install-packages.sh",
+        "",
+        "RUN npm install -g @anthropic-ai/claude-code",
         "",
         "ARG REPO_PATH",
         "ARG BRANCH",
@@ -515,6 +517,14 @@ def cmd_start_image(args):
     if hasattr(args, "name") and args.name:
         cmd += ["-e", f"DKR_WORK_BRANCH={args.name}"]
 
+    agent = getattr(args, "agent", "claude")
+    cmd += ["-e", f"DKR_AGENT={agent}"]
+
+    # Mount Claude auth config if it exists
+    claude_json = Path.home() / ".claude.json"
+    if claude_json.exists():
+        cmd += ["-v", f"{claude_json}:/root/.claude.json:ro"]
+
     # Use the first tag if available, otherwise the image id
     image_ref = image["tags"][0] if image["tags"] else image["id"]
     cmd.append(image_ref)
@@ -596,6 +606,8 @@ def _build_parser():
     p.add_argument("git_repo", nargs="?", default=None, help="Path to local git repo (default: latest image)")
     p.add_argument("branch_from", nargs="?", default=None, help="Branch/ref (default: latest image)")
     p.add_argument("--name", default=None, help="Working branch name (default: random adjective-noun)")
+    p.add_argument("--agent", default="claude", choices=["claude", "codex", "opencode", "none"],
+                   help="AI agent to run in first tmux window (default: claude)")
 
     # list-images
     p = sub.add_parser("list-images", help="List dkr-managed Docker images")

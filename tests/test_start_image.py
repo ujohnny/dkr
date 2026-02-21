@@ -1,7 +1,11 @@
 """Test start-image command."""
 
+import json
 import re
 import subprocess
+from pathlib import Path
+
+import pytest
 
 from conftest import dkr
 
@@ -76,3 +80,26 @@ volumes = {host_dir}:/mnt/shared
 
         output = capfd.readouterr().out
         assert "from-host" in output
+
+    def test_claude_json_mounted(self, make_repo, capfd):
+        """~/.claude.json from host is available inside the container."""
+        host_claude_json = Path.home() / ".claude.json"
+        if not host_claude_json.exists():
+            pytest.skip("~/.claude.json not found on host")
+
+        host_data = json.loads(host_claude_json.read_text())
+        host_uuid = host_data["oauthAccount"]["accountUuid"]
+
+        repo, _ = make_repo({
+            "master": [
+                {"message": "initial", "files": {"README.md": "hello"}},
+            ],
+        })
+
+        dkr("create-image", str(repo), "master")
+        dkr("start-image", str(repo), "master", "--agent", "none", "--",
+            "node", "-e",
+            "console.log(JSON.parse(require('fs').readFileSync('/root/.claude.json'))['oauthAccount']['accountUuid'])")
+
+        output = capfd.readouterr().out
+        assert host_uuid in output
