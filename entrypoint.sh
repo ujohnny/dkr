@@ -10,7 +10,12 @@ TRUST
 if [ -f /run/secrets/anthropic_key ]; then
     mkdir -p /root/.claude
     cat > /root/.claude/settings.json <<'SETTINGS'
-{"apiKeyHelper":"cat /run/secrets/anthropic_key"}
+{"apiKeyHelper":"cat /run/secrets/anthropic_key","model":"opus[1m]"}
+SETTINGS
+else
+    mkdir -p /root/.claude
+    cat > /root/.claude/settings.json <<'SETTINGS'
+{"model":"opus[1m]"}
 SETTINGS
 fi
 
