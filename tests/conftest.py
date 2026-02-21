@@ -114,6 +114,32 @@ def make_repo(tmp_path):
     return _factory
 
 
+@pytest.fixture
+def clone_repo(tmp_path):
+    """Factory fixture that clones an existing repo.
+
+    Returns a callable: ``clone_repo(source_path) -> clone_path``
+
+    The clone has ``origin`` pointing to *source_path*, so
+    ``origin/master`` etc. are available for staleness checks
+    and remote branch tests.
+    """
+    counter = [0]
+
+    def _factory(source_path):
+        clone_dir = tmp_path / f"clone_{counter[0]}"
+        counter[0] += 1
+        subprocess.run(
+            ["git", "clone", str(source_path), str(clone_dir)],
+            capture_output=True, text=True, check=True,
+        )
+        _git(clone_dir, "config", "user.email", "test@test.com")
+        _git(clone_dir, "config", "user.name", "Test")
+        return clone_dir
+
+    return _factory
+
+
 def _dkr_image_ids():
     """Return the set of current dkr-managed image IDs."""
     r = subprocess.run(

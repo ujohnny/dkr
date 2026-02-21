@@ -97,12 +97,13 @@ def image_tag(repo_path, branch):
     return f"dkr:{repo_name}-{branch_san}"
 
 
-def build_labels(repo_path, branch, commit, image_type):
+def build_labels(repo_path, branch, commit, image_type, branch_from=None):
     """Return a dict of labels to apply to the image."""
     return {
         "dkr.repo_path": str(repo_path),
         "dkr.repo_name": repo_path.name,
         "dkr.branch": branch,
+        "dkr.branch_from": branch_from or branch,
         "dkr.commit": commit,
         "dkr.created_at": datetime.now(timezone.utc).isoformat(),
         "dkr.type": image_type,
@@ -328,7 +329,7 @@ def cmd_create_image(args):
     checkout_branch = branch if remote else branch_from
 
     tag = image_tag(repo_path, checkout_branch)
-    labels = build_labels(repo_path, checkout_branch, commit, "base")
+    labels = build_labels(repo_path, checkout_branch, commit, "base", branch_from)
     user = getpass.getuser()
 
     # Checkout target branch so we can read .dkr.conf and provide files
@@ -399,7 +400,7 @@ def cmd_update_image(args):
     base_ref = base["tags"][0] if base["tags"] else base["id"]
     commit = resolve_commit(repo_path, branch_from)
     tag = image_tag(repo_path, checkout_branch)
-    labels = build_labels(repo_path, checkout_branch, commit, "update")
+    labels = build_labels(repo_path, checkout_branch, commit, "update", branch_from)
     user = getpass.getuser()
 
     # Checkout target branch to read .dkr.conf and provide files for post_clone
@@ -446,7 +447,7 @@ def staleness_check(image, repo_path):
     """Check if the image is stale vs its branch. Returns True if we should proceed."""
     labels = image["labels"]
     image_commit = labels.get("dkr.commit")
-    branch = labels.get("dkr.branch")
+    branch = labels.get("dkr.branch_from") or labels.get("dkr.branch")
     if not image_commit or not branch:
         return True
 
