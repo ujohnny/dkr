@@ -2,7 +2,7 @@
 
 import subprocess
 
-from conftest import dkr, docker_run_cmd, find_images
+from conftest import dkr, docker_run_cmd, _git, find_images
 
 
 class TestCreateImage:
@@ -97,3 +97,29 @@ RUN echo post_clone_marker > /tmp/marker.txt
 
         # Verify post_clone step ran
         assert docker_run_cmd(tag, "cat", "/tmp/marker.txt") == "post_clone_marker"
+
+    def test_remote_ref(self, make_repo, clone_repo):
+        """Create an image from a remote ref with unusual remote name (space/main)."""
+        remote, _ = make_repo({
+            "main": [
+                {"message": "initial", "files": {"README.md": "from remote"}},
+                {"message": "second", "files": {"remote.txt": "remote content"}},
+            ],
+        })
+
+        local = clone_repo(remote)
+        # Add a second remote with an unusual name
+        _git(local, "remote", "add", "space", str(remote))
+        _git(local, "fetch", "space")
+
+        dkr("create-image", str(local), "space/main")
+
+        images = find_images(local, "space/main")
+        assert len(images) >= 1
+        img = images[0]
+        assert img["labels"]["dkr.branch"] == "main"
+        assert img["labels"]["dkr.branch_from"] == "space/main"
+
+        tag = img["tags"][0]
+        assert docker_run_cmd(tag, "cat", "/workspace/README.md") == "from remote"
+        assert docker_run_cmd(tag, "cat", "/workspace/remote.txt") == "remote content"

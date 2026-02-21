@@ -147,7 +147,7 @@ def find_images(repo_path=None, branch=None):
             continue
         if repo_path and labels.get("dkr.repo_path") != str(repo_path):
             continue
-        if branch and labels.get("dkr.branch") != branch:
+        if branch and branch not in (labels.get("dkr.branch"), labels.get("dkr.branch_from")):
             continue
         # Collect tags
         tags = img.get("RepoTags") or []
