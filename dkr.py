@@ -11,6 +11,7 @@ import re
 import urllib.request
 import shutil
 import subprocess
+import tempfile
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -375,42 +376,36 @@ def _build_image(*, ssh_key, repo_path, checkout_branch, tag, labels,
     if need_checkout:
         git(repo_path, "checkout", checkout_branch)
 
-    dockerfile_path = repo_path / ".dkr-Dockerfile"
-    entrypoint_path = repo_path / ".dkr-entrypoint.sh"
-    install_pkg_path = repo_path / ".dkr-install-packages.sh"
     try:
         conf = load_dkr_conf(repo_path)
-        dockerfile_path.write_text(dockerfile_generator(conf))
 
-        # Copy support scripts into the build context
-        shutil.copy2(SCRIPT_DIR / "entrypoint.sh", entrypoint_path)
-        shutil.copy2(SCRIPT_DIR / "install-packages.sh", install_pkg_path)
+        with tempfile.TemporaryDirectory() as build_ctx:
+            # Write generated Dockerfile and support scripts into temp build context
+            (Path(build_ctx) / "Dockerfile").write_text(dockerfile_generator(conf))
+            shutil.copy2(SCRIPT_DIR / "entrypoint.sh", Path(build_ctx) / ".dkr-entrypoint.sh")
+            shutil.copy2(SCRIPT_DIR / "install-packages.sh", Path(build_ctx) / ".dkr-install-packages.sh")
 
-        claude_ver = get_claude_latest_version()
-        print(f"{message_prefix} image {tag} (claude {claude_ver})")
+            claude_ver = get_claude_latest_version()
+            print(f"{message_prefix} image {tag} (claude {claude_ver})")
 
-        cmd = [
-            "docker", "build",
-            "--ssh", f"default={ssh_key}",
-            "--network=host",
-            "--build-arg", f"REPO_PATH={repo_path}",
-            "--build-arg", f"BRANCH={checkout_branch}",
-            "--build-arg", f"GIT_USER={user}",
-            "--build-arg", f"HOST_ADDR={HOST_ADDR}",
-            "--build-arg", f"CLAUDE_VERSION={claude_ver}",
-            "--tag", tag,
-            "-f", str(dockerfile_path),
-        ]
-        for k, v in (extra_build_args or {}).items():
-            cmd += ["--build-arg", f"{k}={v}"]
-        cmd += label_args(labels) + [str(repo_path)]
+            cmd = [
+                "docker", "build",
+                "--ssh", f"default={ssh_key}",
+                "--network=host",
+                "--build-arg", f"REPO_PATH={repo_path}",
+                "--build-arg", f"BRANCH={checkout_branch}",
+                "--build-arg", f"GIT_USER={user}",
+                "--build-arg", f"HOST_ADDR={HOST_ADDR}",
+                "--build-arg", f"CLAUDE_VERSION={claude_ver}",
+                "--tag", tag,
+            ]
+            for k, v in (extra_build_args or {}).items():
+                cmd += ["--build-arg", f"{k}={v}"]
+            cmd += label_args(labels) + [build_ctx]
 
-        env = {**os.environ, "DOCKER_BUILDKIT": "1"}
-        subprocess.run(cmd, check=True, env=env)
+            env = {**os.environ, "DOCKER_BUILDKIT": "1"}
+            subprocess.run(cmd, check=True, env=env)
     finally:
-        dockerfile_path.unlink(missing_ok=True)
-        entrypoint_path.unlink(missing_ok=True)
-        install_pkg_path.unlink(missing_ok=True)
         if need_checkout:
             git(repo_path, "checkout", original_ref)
 
