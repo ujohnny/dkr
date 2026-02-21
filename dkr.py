@@ -8,6 +8,7 @@ import os
 import platform
 import random
 import re
+import urllib.request
 import shutil
 import subprocess
 import sys
@@ -105,6 +106,18 @@ _NOUNS = ["panda", "tiger", "whale", "eagle", "falcon", "otter", "raven", "shark
 def random_name():
     """Generate a Docker-style adjective-noun name."""
     return f"{random.choice(_ADJECTIVES)}-{random.choice(_NOUNS)}"
+
+
+_CLAUDE_RELEASES_BUCKET = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases"
+
+
+def get_claude_latest_version():
+    """Fetch the latest Claude Code version string. Falls back to 'latest' on error."""
+    try:
+        with urllib.request.urlopen(f"{_CLAUDE_RELEASES_BUCKET}/latest", timeout=5) as r:
+            return r.read().decode().strip()
+    except Exception:
+        return "latest"
 
 
 def sanitize_tag(name):
@@ -262,6 +275,7 @@ def generate_dockerfile_create(conf):
         f"    /tmp/install-packages.sh {pkg_list} && \\",
         "    rm /tmp/install-packages.sh",
         "",
+        "ARG CLAUDE_VERSION=latest",
         "RUN curl -fsSL https://claude.ai/install.sh | bash",
         "",
         "ARG REPO_PATH",
@@ -369,7 +383,8 @@ def _build_image(*, ssh_key, repo_path, checkout_branch, tag, labels,
         shutil.copy2(SCRIPT_DIR / "entrypoint.sh", entrypoint_path)
         shutil.copy2(SCRIPT_DIR / "install-packages.sh", install_pkg_path)
 
-        print(f"{message_prefix} image {tag}")
+        claude_ver = get_claude_latest_version()
+        print(f"{message_prefix} image {tag} (claude {claude_ver})")
 
         cmd = [
             "docker", "build",
@@ -379,6 +394,7 @@ def _build_image(*, ssh_key, repo_path, checkout_branch, tag, labels,
             "--build-arg", f"BRANCH={checkout_branch}",
             "--build-arg", f"GIT_USER={user}",
             "--build-arg", f"HOST_ADDR={HOST_ADDR}",
+            "--build-arg", f"CLAUDE_VERSION={claude_ver}",
             "--tag", tag,
             "-f", str(dockerfile_path),
         ]
