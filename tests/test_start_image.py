@@ -98,8 +98,10 @@ volumes = {host_dir}:/mnt/shared
 
         dkr("create-image", str(repo), "master")
         dkr("start-image", str(repo), "master", "--agent", "none", "--",
-            "node", "-e",
-            "console.log(JSON.parse(require('fs').readFileSync('/root/.claude.json'))['oauthAccount']['accountUuid'])")
+            "bash", "-c",
+            "jq -r '.oauthAccount.accountUuid' /root/.claude.json && "
+            "jq -r '.projects[\"/workspace\"].hasTrustDialogAccepted' /root/.claude.json")
 
         output = capfd.readouterr().out
         assert host_uuid in output
+        assert "true" in output  # /workspace trusted

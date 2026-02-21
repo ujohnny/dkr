@@ -1,6 +1,11 @@
 #!/bin/bash
 # Update working copy to latest before starting tmux
 
+# Copy Claude auth config, stripping projects section
+if [ -f /tmp/.claude.json.host ]; then
+    jq 'del(.projects) | .projects = {"/workspace": {"hasTrustDialogAccepted": true}}' /tmp/.claude.json.host > /root/.claude.json
+fi
+
 cd /workspace
 BRANCH="${DKR_BRANCH:-master}"
 WORK_BRANCH="${DKR_WORK_BRANCH:-work}"

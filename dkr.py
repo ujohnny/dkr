@@ -201,7 +201,7 @@ DKR_CONF_DEFAULTS = {
     "post_clone": "",
 }
 
-REQUIRED_PACKAGES = ["git", "tmux", "openssh-clients", "curl"]
+REQUIRED_PACKAGES = ["git", "tmux", "openssh-clients", "curl", "jq"]
 
 
 def load_dkr_conf(repo_path):
@@ -542,10 +542,10 @@ def cmd_start_image(args):
     agent = getattr(args, "agent", "claude")
     cmd += ["-e", f"DKR_AGENT={agent}"]
 
-    # Mount Claude auth config if it exists
+    # Mount Claude auth config to a temp path (entrypoint copies and cleans it)
     claude_json = Path.home() / ".claude.json"
     if claude_json.exists():
-        cmd += ["-v", f"{claude_json}:/root/.claude.json:ro"]
+        cmd += ["-v", f"{claude_json}:/tmp/.claude.json.host:ro"]
 
     # Use the first tag if available, otherwise the image id
     image_ref = image["tags"][0] if image["tags"] else image["id"]
