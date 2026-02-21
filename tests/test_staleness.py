@@ -33,7 +33,7 @@ def _make_stale_remote(make_repo, clone_repo):
     local = clone_repo(remote)
 
     dkr("create-image", str(local), "origin/master")
-    image = find_latest_image(local, "master")
+    image = find_latest_image(local, "origin/master")
 
     for i in range(60):
         (remote / f"file_{i}.txt").write_text(f"content {i}")
