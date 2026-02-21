@@ -1,0 +1,6 @@
+:<<'BATCH'
+@echo off
+python "%~dp0dkr.py" %*
+exit /b %errorlevel%
+BATCH
+exec "$(dirname "$0")/dkr.py" "$@"
