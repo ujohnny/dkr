@@ -270,6 +270,8 @@ def generate_dockerfile_create(conf):
         "# syntax=docker/dockerfile:1",
         f"FROM {base_image}",
         "",
+        "ENV LANG=C.UTF-8",
+        "",
         "COPY .dkr-install-packages.sh /tmp/install-packages.sh",
         "RUN chmod +x /tmp/install-packages.sh && \\",
         f"    /tmp/install-packages.sh {pkg_list} && \\",
