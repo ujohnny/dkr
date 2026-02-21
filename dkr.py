@@ -6,6 +6,7 @@ import getpass
 import json
 import os
 import platform
+import random
 import re
 import shutil
 import subprocess
@@ -91,6 +92,19 @@ def resolve_head(repo_path):
 def resolve_commit(repo_path, branch_from):
     """Resolve branch_from to a full commit SHA in the local repo."""
     return git(repo_path, "rev-parse", branch_from)
+
+
+_ADJECTIVES = ["brave", "calm", "cool", "eager", "fast", "happy", "keen", "mild",
+               "neat", "quick", "sharp", "warm", "bold", "dark", "fair", "glad",
+               "lush", "pure", "safe", "wise"]
+_NOUNS = ["panda", "tiger", "whale", "eagle", "falcon", "otter", "raven", "shark",
+          "cobra", "heron", "maple", "cedar", "birch", "aspen", "coral", "frost",
+          "ember", "drift", "storm"]
+
+
+def random_name():
+    """Generate a Docker-style adjective-noun name."""
+    return f"{random.choice(_ADJECTIVES)}-{random.choice(_NOUNS)}"
 
 
 def sanitize_tag(name):
@@ -522,8 +536,8 @@ def cmd_start_image(args):
     if ssh_key.exists():
         cmd += ["-v", f"{ssh_key}:/root/.ssh/id_rsa:ro"]
 
-    if hasattr(args, "name") and args.name:
-        cmd += ["-e", f"DKR_WORK_BRANCH={args.name}"]
+    work_name = args.name if hasattr(args, "name") and args.name else random_name()
+    cmd += ["-e", f"DKR_WORK_BRANCH={work_name}", "--hostname", work_name]
 
     agent = getattr(args, "agent", "claude")
     cmd += ["-e", f"DKR_AGENT={agent}"]
