@@ -37,10 +37,6 @@ class TestCreateImage:
         log = docker_run_cmd(tag, "git", "-C", "/workspace", "log", "--oneline")
         assert len(log.strip().split("\n")) == 2
 
-        # Verify bazelrc
-        bazelrc = docker_run_cmd(tag, "cat", "/root/.bazelrc")
-        assert "--disk_cache=/bazel-cache" in bazelrc
-
     def test_specific_branch(self, make_repo):
         """Create an image from a feature branch, verify branch-specific files."""
         repo, commits = make_repo({

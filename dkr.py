@@ -174,6 +174,7 @@ def find_latest_image(repo_path=None, branch=None):
 DKR_CONF_DEFAULTS = {
     "base_image": "fedora:43",
     "packages": "",
+    "volumes": "",
     "pre_clone": "",
     "post_clone": "",
 }
@@ -266,8 +267,6 @@ def generate_dockerfile_create(conf):
         lines += [post_clone, ""]
 
     lines += [
-        'RUN echo "build --disk_cache=/bazel-cache" >> /root/.bazelrc',
-        "",
         "COPY .dkr-entrypoint.sh /entrypoint.sh",
         "RUN chmod +x /entrypoint.sh",
         "",
@@ -497,15 +496,18 @@ def cmd_start_image(args):
     tag_str = ", ".join(image["tags"]) or image["id"]
     ssh_key = Path.home() / ".ssh" / "id_rsa"
 
+    # Load volumes from .dkr.conf
+    conf = load_dkr_conf(repo_path) if repo_path else DKR_CONF_DEFAULTS
+
     print(f"Starting container from {tag_str}")
 
     cmd = ["docker", "run", "--rm"]
     if sys.stdin.isatty():
         cmd += ["-it"]
-    cmd += [
-        "-v", "bazel-cache:/bazel-cache",
-        "--network=host",
-    ]
+    cmd += ["--network=host"]
+
+    for vol in conf["volumes"].split():
+        cmd += ["-v", vol]
 
     if ssh_key.exists():
         cmd += ["-v", f"{ssh_key}:/root/.ssh/id_rsa:ro"]

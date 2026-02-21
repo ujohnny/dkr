@@ -1,6 +1,7 @@
 """Test start-image command."""
 
 import re
+import subprocess
 
 from conftest import dkr
 
@@ -51,3 +52,27 @@ class TestStartImage:
 
         assert m.group(1) == "my-feature"
         assert m.group(2) == "host/master"
+
+    def test_volumes_from_dkr_conf(self, make_repo, tmp_path, capfd):
+        """Volumes defined in .dkr.conf are mounted in the container."""
+        host_dir = tmp_path / "shared"
+        host_dir.mkdir()
+        (host_dir / "marker.txt").write_text("from-host")
+
+        repo, _ = make_repo({
+            "master": [
+                {"message": "initial", "files": {
+                    "README.md": "hello",
+                    ".dkr.conf": f"""\
+volumes = {host_dir}:/mnt/shared
+""",
+                }},
+            ],
+        })
+
+        dkr("create-image", str(repo), "master")
+        dkr("start-image", str(repo), "master", "--",
+            "cat", "/mnt/shared/marker.txt")
+
+        output = capfd.readouterr().out
+        assert "from-host" in output
