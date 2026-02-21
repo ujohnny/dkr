@@ -214,7 +214,7 @@ DKR_CONF_DEFAULTS = {
     "post_clone": "",
 }
 
-REQUIRED_PACKAGES = ["git", "tmux", "openssh-clients", "curl", "jq"]
+REQUIRED_PACKAGES = ["git", "tmux", "openssh-clients", "curl"]
 
 
 def load_dkr_conf(repo_path):
@@ -559,10 +559,13 @@ def cmd_start_image(args):
     agent = getattr(args, "agent", "claude")
     cmd += ["-e", f"DKR_AGENT={agent}"]
 
-    # Mount Claude auth config to a temp path (entrypoint copies and cleans it)
-    claude_json = Path.home() / ".claude.json"
-    if claude_json.exists():
-        cmd += ["-v", f"{claude_json}:/tmp/.claude.json.host:ro"]
+    # Mount Anthropic API key file read-only
+    anthropic_key = getattr(args, "anthropic_key", None)
+    if anthropic_key:
+        key_path = Path(anthropic_key).expanduser().resolve()
+        if not key_path.exists():
+            sys.exit(f"Error: Anthropic API key file not found: {key_path}")
+        cmd += ["-v", f"{key_path}:/run/secrets/anthropic_key:ro"]
 
     # Use the first tag if available, otherwise the image id
     image_ref = image["tags"][0] if image["tags"] else image["id"]
@@ -645,6 +648,8 @@ def _build_parser():
     p.add_argument("git_repo", nargs="?", default=None, help="Path to local git repo (default: latest image)")
     p.add_argument("branch_from", nargs="?", default=None, help="Branch/ref (default: latest image)")
     p.add_argument("--name", default=None, help="Working branch name (default: random adjective-noun)")
+    p.add_argument("--anthropic-key", default=None,
+                   help="Path to file containing Anthropic API key (mounted read-only into container)")
     p.add_argument("--agent", default="claude", choices=["claude", "codex", "opencode", "none"],
                    help="AI agent to run in first tmux window (default: claude)")
 

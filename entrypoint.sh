@@ -1,9 +1,17 @@
 #!/bin/bash
 # Update working copy to latest before starting tmux
 
-# Copy Claude auth config, stripping projects section
-if [ -f /tmp/.claude.json.host ]; then
-    jq 'del(.projects) | .projects = {"/workspace": {"hasTrustDialogAccepted": true}}' /tmp/.claude.json.host > /root/.claude.json
+# Trust /workspace project for Claude
+cat > /root/.claude.json <<'TRUST'
+{"projects":{"/workspace":{"hasTrustDialogAccepted":true}}}
+TRUST
+
+# Configure Claude to read API key from mounted secret
+if [ -f /run/secrets/anthropic_key ]; then
+    mkdir -p /root/.claude
+    cat > /root/.claude/settings.json <<'SETTINGS'
+{"apiKeyHelper":"cat /run/secrets/anthropic_key"}
+SETTINGS
 fi
 
 cd /workspace

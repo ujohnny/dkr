@@ -119,11 +119,12 @@ Same argument semantics as `create-image`. Finds the most recent existing image 
 ## Command: `start-image`
 
 ```
-./dkr.py start-image [git_repo] [branch_from] [--name <branch_name>] [-- <cmd>]
+./dkr.py start-image [git_repo] [branch_from] [--name <branch_name>] [--anthropic-key <path>] [-- <cmd>]
 ```
 
 - No args = find the most recently built `dkr:*` image. With args = find latest for that repo+branch.
 - `--name <branch_name>` — set the working branch name instead of random adjective-noun (passed as `DKR_WORK_BRANCH` env var).
+- `--anthropic-key <path>` — path to a file containing the Anthropic API key. Mounted read-only at `/run/secrets/anthropic_key`. The entrypoint creates `/root/.claude/settings.json` with `apiKeyHelper` that reads the key via `cat`.
 - Extra args after `--` are passed to the container (forwarded to entrypoint as `$@`).
 
 **Staleness check (before starting):**
@@ -135,8 +136,8 @@ Same argument semantics as `create-image`. Finds the most recent existing image 
 **Run flow:**
 1. Locate image, run staleness check.
 2. `docker run --rm` (`-it` only when stdin is a TTY):
-   - `-v bazel-cache:/bazel-cache` — named volume shared across all containers
    - `-v ~/.ssh/id_rsa:/root/.ssh/id_rsa:ro` — SSH key for push/fetch
+   - `-v <anthropic_key>:/run/secrets/anthropic_key:ro` — API key file (if `--anthropic-key` provided)
    - `--network=host` — reach host SSH
 3. Entrypoint runs, then tmux (or `<cmd>` if provided).
 
@@ -145,13 +146,15 @@ Same argument semantics as `create-image`. Finds the most recent existing image 
 ## Entrypoint Behavior
 
 On container start, `entrypoint.sh`:
-1. Fetches the matching branch from `host` remote: `git fetch host $DKR_BRANCH`
-2. Uses `DKR_WORK_BRANCH` if set (from `--name`), otherwise generates a random adjective-noun name (e.g. `brave-panda`)
-3. Checks out that branch: `git checkout -b <random_name> FETCH_HEAD`
-4. Sets upstream: `git branch --set-upstream-to=host/<branch>`
-5. Configures push refspec: `remote.host.push refs/heads/<name>:refs/heads/$HOSTNAME/<name>` — so `git push` creates `$HOSTNAME/<random_name>` on the host repo
-6. If args provided (`docker run <image> <cmd>`), runs `<cmd>` instead of tmux
-7. Otherwise: `exec tmux new-session -s main`
+1. Creates `/root/.claude.json` with `/workspace` project trust
+2. If `/run/secrets/anthropic_key` exists, creates `/root/.claude/settings.json` with `apiKeyHelper` pointing to it
+3. Fetches the matching branch from `host` remote: `git fetch host $DKR_BRANCH`
+4. Uses `DKR_WORK_BRANCH` if set (from `--name`), otherwise generates a random adjective-noun name (e.g. `brave-panda`)
+5. Checks out that branch: `git checkout -b <random_name> FETCH_HEAD`
+6. Sets upstream: `git branch --set-upstream-to=host/<branch>`
+7. Configures push refspec: `remote.host.push refs/heads/<name>:refs/heads/$HOSTNAME/<name>` — so `git push` creates `$HOSTNAME/<random_name>` on the host repo
+8. If args provided (`docker run <image> <cmd>`), runs `<cmd>` instead of tmux
+9. Otherwise: `exec tmux new-session -s main`
 
 ---
 
@@ -234,6 +237,8 @@ Creates a `git clone` of an existing repo. The clone has `origin` pointing to th
 | `TestUpdateImage::test_update_adds_new_commits` | Update layer has new commit, `dkr.type=update` label |
 | `TestStartImage::test_random_branch_on_start` | Entrypoint creates adjective-noun branch tracking `host/<branch>` |
 | `TestStartImage::test_custom_branch_name` | `--name my-feature` sets the working branch name |
+| `TestStartImage::test_workspace_trusted` | Entrypoint creates `.claude.json` with `/workspace` trust |
+| `TestStartImage::test_anthropic_key_mounted` | `--anthropic-key` mounts key file, creates `settings.json` with `apiKeyHelper` |
 | `TestListImages::test_lists_created_images` | Both branches appear in list output |
 | `TestStaleness::test_stale_image_warns_and_prompts_update` | Warning + `"update"` return on yes |
 | `TestStaleness::test_stale_image_continues_on_decline` | Proceeds on no |

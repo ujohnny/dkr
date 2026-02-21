@@ -2,10 +2,6 @@
 
 import json
 import re
-import subprocess
-from pathlib import Path
-
-import pytest
 
 from conftest import dkr
 
@@ -81,15 +77,8 @@ volumes = {host_dir}:/mnt/shared
         output = capfd.readouterr().out
         assert "from-host" in output
 
-    def test_claude_json_mounted(self, make_repo, capfd):
-        """~/.claude.json from host is available inside the container."""
-        host_claude_json = Path.home() / ".claude.json"
-        if not host_claude_json.exists():
-            pytest.skip("~/.claude.json not found on host")
-
-        host_data = json.loads(host_claude_json.read_text())
-        host_uuid = host_data["oauthAccount"]["accountUuid"]
-
+    def test_workspace_trusted(self, make_repo, capfd):
+        """Entrypoint creates .claude.json with /workspace trust."""
         repo, _ = make_repo({
             "master": [
                 {"message": "initial", "files": {"README.md": "hello"}},
@@ -98,10 +87,34 @@ volumes = {host_dir}:/mnt/shared
 
         dkr("create-image", str(repo), "master")
         dkr("start-image", str(repo), "master", "--agent", "none", "--",
-            "bash", "-c",
-            "jq -r '.oauthAccount.accountUuid' /root/.claude.json && "
-            "jq -r '.projects[\"/workspace\"].hasTrustDialogAccepted' /root/.claude.json")
+            "bash", "-c", "cat /root/.claude.json")
 
         output = capfd.readouterr().out
-        assert host_uuid in output
-        assert "true" in output  # /workspace trusted
+        data = json.loads(output.split("\n")[-2])  # last non-empty line
+        assert data["projects"]["/workspace"]["hasTrustDialogAccepted"] is True
+
+    def test_anthropic_key_mounted(self, make_repo, tmp_path, capfd):
+        """--anthropic-key mounts the key file and creates settings.json with apiKeyHelper."""
+        key_file = tmp_path / "api_key"
+        key_file.write_text("sk-test-key-12345")
+
+        repo, _ = make_repo({
+            "master": [
+                {"message": "initial", "files": {"README.md": "hello"}},
+            ],
+        })
+
+        dkr("create-image", str(repo), "master")
+        dkr("start-image", str(repo), "master",
+            "--anthropic-key", str(key_file), "--agent", "none", "--",
+            "bash", "-c",
+            "cat /root/.claude/settings.json && echo '---' && cat /run/secrets/anthropic_key")
+
+        output = capfd.readouterr().out
+        # settings.json should have apiKeyHelper
+        settings_line = [l for l in output.split("\n") if "apiKeyHelper" in l]
+        assert settings_line, f"Expected apiKeyHelper in output:\n{output}"
+        settings = json.loads(settings_line[0])
+        assert settings["apiKeyHelper"] == "cat /run/secrets/anthropic_key"
+        # Key file content should be readable
+        assert "sk-test-key-12345" in output
